@@ -13,8 +13,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Linting & Formatting
 
 ```bash
+# TFLint初期化（初回のみ、AWSプラグインをダウンロード）
+tflint --init
+
 # Markdown文書の日本語校正
 npx textlint *.md
+
+# Terraformコードのフォーマット確認
+terraform fmt -check -recursive
+
+# TFLintの手動実行
+tflint --recursive
 
 # Pre-commitフックの手動実行（全ファイル）
 pre-commit run --all-files
@@ -27,10 +36,10 @@ pre-commit run
 
 ```bash
 # コミット前チェック（pre-commit hooksが自動実行される）
+# - terraform fmt: Terraformコードの自動整形
+# - terraform validate: 構文とリソース設定の検証
+# - tflint: ベストプラクティスとAWS固有のチェック
 git commit -m "message"
-
-# Terraformコードのフォーマット
-terraform fmt -recursive
 ```
 
 ### Terraform セットアップ
@@ -76,13 +85,16 @@ cp terraform.tfvars.example terraform.tfvars
 # 2. 初期化
 terraform init
 
-# 3. プランの確認
+# 3. TFLint初期化（初回のみ、AWSプラグインをダウンロード）
+tflint --init
+
+# 4. プランの確認
 terraform plan -out=tfplan
 
-# 4. 適用
+# 5. 適用
 terraform apply tfplan
 
-# 5. 出力値の確認
+# 6. 出力値の確認
 terraform output
 terraform output -json > outputs.json  # JSON形式で保存
 ```
@@ -369,6 +381,7 @@ AWS Managed Grafanaは高価（$250/月～）であり、開発環境では小�
 - `why-otel-collector.md` - OTel Collector必要性の詳細
 - `grafana-storage-strategy.md` - Grafana永続化戦略の詳細
 - `.pre-commit-config.yaml` - コード品質チェック設定
+- `.tflint.hcl` - TFLint設定（Terraform linter）
 - `.devcontainer/` - 開発環境設定
 
 ## 注意事項
@@ -393,9 +406,16 @@ AWS Managed Grafanaは高価（$250/月～）であり、開発環境では小�
    ```
 
 3. **AWS認証情報の設定**
+
    ```bash
    aws configure
    # または環境変数でAWS_ACCESS_KEY_ID、AWS_SECRET_ACCESS_KEYを設定
+   ```
+
+4. **TFLintプラグインの初期化**（初回のみ）
+   ```bash
+   tflint --init
+   # AWSプラグインをダウンロード（.tflint.hclで定義）
    ```
 
 ### 機密情報の取り扱い

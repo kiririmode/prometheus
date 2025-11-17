@@ -33,16 +33,6 @@ variable "task_execution_role_arn" {
   type        = string
 }
 
-variable "amp_query_endpoint" {
-  description = "AMP query endpoint URL"
-  type        = string
-}
-
-variable "amp_workspace_id" {
-  description = "AMP workspace ID"
-  type        = string
-}
-
 variable "aws_region" {
   description = "AWS region"
   type        = string

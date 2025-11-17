@@ -10,11 +10,20 @@ resource "aws_prometheus_workspace" "main" {
   )
 }
 
-# Logging Configuration (Optional)
-resource "aws_prometheus_workspace_logging_configuration" "main" {
-  count         = var.enable_logging ? 1 : 0
-  workspace_id  = aws_prometheus_workspace.main.id
-  log_group_arn = "${aws_cloudwatch_log_group.amp_logs[0].arn}:*"
+# Query Logging Configuration (Optional)
+resource "aws_prometheus_query_logging_configuration" "main" {
+  count        = var.enable_logging ? 1 : 0
+  workspace_id = aws_prometheus_workspace.main.id
+
+  destination {
+    cloudwatch_logs {
+      log_group_arn = "${aws_cloudwatch_log_group.amp_logs[0].arn}:*"
+    }
+
+    filters {
+      qsp_threshold = 1000
+    }
+  }
 }
 
 resource "aws_cloudwatch_log_group" "amp_logs" {

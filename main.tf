@@ -141,8 +141,6 @@ module "grafana" {
   grafana_security_group_id = module.security_groups.grafana_security_group_id
   task_role_arn             = module.iam.grafana_task_role_arn
   task_execution_role_arn   = module.iam.ecs_task_execution_role_arn
-  amp_query_endpoint        = module.amp.query_endpoint
-  amp_workspace_id          = module.amp.workspace_id
   aws_region                = var.aws_region
   cpu                       = var.grafana_cpu
   memory                    = var.grafana_memory

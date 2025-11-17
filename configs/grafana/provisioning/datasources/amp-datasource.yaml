@@ -1,0 +1,16 @@
+# Grafana Data Source Provisioning for AWS Managed Prometheus
+apiVersion: 1
+
+datasources:
+  - name: AWS Managed Prometheus
+    type: prometheus
+    access: proxy
+    url: ${AMP_QUERY_ENDPOINT}
+    isDefault: true
+    editable: true
+    jsonData:
+      httpMethod: POST
+      sigV4Auth: true
+      sigV4AuthType: default
+      sigV4Region: ${AWS_REGION}
+    version: 1

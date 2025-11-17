@@ -1,0 +1,62 @@
+# Example Terraform variables file
+# Copy this file to terraform.tfvars and update with your actual values
+
+# Project and environment
+project_name = "prometheus"
+environment  = "dev"
+owner        = "your-team-name"
+
+# AWS region
+aws_region = "ap-northeast-1"
+
+# Network configuration
+vpc_cidr             = "10.0.0.0/16"
+public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
+private_subnet_cidrs = ["10.0.11.0/24", "10.0.12.0/24"]
+availability_zones   = ["ap-northeast-1a", "ap-northeast-1c"]
+
+# NAT Gateway configuration
+# For dev: single_nat_gateway = true (cost optimization)
+# For prod: single_nat_gateway = false (high availability)
+single_nat_gateway = true
+
+# ECS Fargate configuration
+# For dev: enable_fargate_spot = true (cost optimization)
+# For prod: enable_fargate_spot = false (stability)
+enable_fargate_spot = true
+
+# OTel Collector configuration
+otel_cpu    = 512  # 0.5 vCPU
+otel_memory = 1024 # 1 GB
+otel_desired_count = 1
+
+# Grafana configuration
+grafana_cpu    = 256 # 0.25 vCPU
+grafana_memory = 512 # 0.5 GB
+grafana_admin_password = "changeme-secure-password"
+
+# Grafana data persistence strategy
+# true: Use EFS for data persistence (~$20/month additional cost)
+# false: Use Dashboards as Code (GitOps approach, recommended)
+enable_grafana_efs = false
+
+# AMP configuration
+amp_retention_days = 30
+
+# CloudWatch Logs retention
+log_retention_days = 7
+
+# ALB configuration - allowed CIDR blocks for Claude Code access
+# For dev: ["0.0.0.0/0"] (open to internet)
+# For prod: ["specific-ip/32"] (restricted)
+allowed_cidr_blocks = ["0.0.0.0/0"]
+
+# Grafana access - allowed CIDR blocks for operators
+# Recommended: Restrict to your organization's IP ranges
+grafana_allowed_cidr_blocks = ["0.0.0.0/0"]
+
+# Tags
+additional_tags = {
+  CostCenter = "engineering"
+  Terraform  = "true"
+}

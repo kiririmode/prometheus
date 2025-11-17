@@ -10,12 +10,20 @@ RUN apt-get update \
     # Install hadolint
     && curl -SL "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-Linux-arm64" -o /usr/local/bin/hadolint \
     && chmod +x /usr/local/bin/hadolint \
-    # Install AWS CLI v2
+    # Install direnv
+    && DIRENV_VERSION="v2.37.1" \
     && ARCH=$(uname -m) \
     && if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
-        curl -SL "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"; \
+    curl -SL "https://github.com/direnv/direnv/releases/download/${DIRENV_VERSION}/direnv.linux-arm64" -o /usr/local/bin/direnv; \
     else \
-        curl -SL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"; \
+    curl -SL "https://github.com/direnv/direnv/releases/download/${DIRENV_VERSION}/direnv.linux-amd64" -o /usr/local/bin/direnv; \
+    fi \
+    && chmod +x /usr/local/bin/direnv \
+    # Install AWS CLI v2
+    && if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+    curl -SL "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"; \
+    else \
+    curl -SL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"; \
     fi \
     && unzip awscliv2.zip \
     && ./aws/install \

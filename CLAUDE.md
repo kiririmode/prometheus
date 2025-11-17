@@ -33,6 +33,68 @@ git commit -m "message"
 terraform fmt -recursive
 ```
 
+### Terraform セットアップ
+
+#### バックエンド構築（初回のみ）
+
+Terraformのstateファイルを管理するS3バケットとDynamoDBテーブルを作成する。
+
+```bash
+# 自動セットアップスクリプトを使用（推奨）
+./scripts/setup-backend.sh
+```
+
+このスクリプトは以下を自動的に実行する：
+
+- S3バケットの作成（`prometheus-terraform-state-dev`）
+- バージョニングの有効化
+- AES256暗号化の設定
+- パブリックアクセスのブロック
+- TLS強制のバケットポリシー適用
+- 90日後に古いバージョンを削除するライフサイクルポリシー
+- DynamoDBテーブルの作成（`prometheus-terraform-lock`、PAY_PER_REQUESTモード）
+- 適切なタグの設定
+
+**手動セットアップ（非推奨）**: 手動で作成する場合は `architecture.md` のデプロイ手順を参照。
+
+#### バックエンド削除（クリーンアップ時）
+
+**警告**: このコマンドは全てのTerraform stateファイルを削除する。
+
+```bash
+# バックエンドのクリーンアップ
+./scripts/destroy-backend.sh
+```
+
+#### Terraform実行手順
+
+```bash
+# 1. 変数ファイルの作成
+cp terraform.tfvars.example terraform.tfvars
+# terraform.tfvarsを編集（environment, owner, パスワード等を設定）
+
+# 2. 初期化
+terraform init
+
+# 3. プランの確認
+terraform plan -out=tfplan
+
+# 4. 適用
+terraform apply tfplan
+
+# 5. 出力値の確認
+terraform output
+terraform output -json > outputs.json  # JSON形式で保存
+```
+
+#### 主要な出力値
+
+- `otel_alb_url` - OTel CollectorのエンドポイントURL（Claude Code設定用）
+- `grafana_alb_url` - Grafana WebUIのURL
+- `grafana_admin_password` - Grafana管理者パスワード（sensitive）
+- `amp_workspace_id` - AMP Workspace ID
+- `amp_remote_write_endpoint` - AMP Remote Writeエンドポイント
+
 ## アーキテクチャ概要
 
 ### データフロー
@@ -90,9 +152,12 @@ ECS Fargate: Grafana (Self-hosted)
 ### ベストプラクティス
 
 1. **State管理**: S3バックエンド + DynamoDB state locking必須
+   - セットアップ: `./scripts/setup-backend.sh` で自動構築
+   - バックエンド設定: `backend.tf`
+   - リージョン: ap-northeast-1
 2. **タグ戦略**: `locals.tf` で共通タグを定義（Environment, Project, ManagedBy）
 3. **命名規則**: `{project}-{environment}-{resource-type}-{name}` 形式
-4. **バージョン固定**: Terraform 1.13.0+、AWS Provider 6.0+
+4. **バージョン固定**: Terraform 1.13.0+、AWS Provider 6.21.0
 
 ## セキュリティ考慮事項
 
@@ -310,10 +375,28 @@ AWS Managed Grafanaは高価（$250/月～）であり、開発環境では小�
 
 ### Terraform実行前の準備
 
-1. S3バケット作成（tfstate管理用）
-2. DynamoDBテーブル作成（state lock用）
-3. `terraform.tfvars` 作成（`terraform.tfvars.example` を参照）
-4. AWS認証情報設定
+1. **バックエンドのセットアップ**（初回のみ）
+
+   ```bash
+   ./scripts/setup-backend.sh
+   ```
+
+   これにより以下が自動作成される：
+   - S3バケット（tfstate管理用）: `prometheus-terraform-state-dev`
+   - DynamoDBテーブル（state lock用）: `prometheus-terraform-lock`
+
+2. **変数ファイルの作成**
+
+   ```bash
+   cp terraform.tfvars.example terraform.tfvars
+   # terraform.tfvarsを編集
+   ```
+
+3. **AWS認証情報の設定**
+   ```bash
+   aws configure
+   # または環境変数でAWS_ACCESS_KEY_ID、AWS_SECRET_ACCESS_KEYを設定
+   ```
 
 ### 機密情報の取り扱い
 

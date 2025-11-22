@@ -102,6 +102,12 @@ variable "max_capacity" {
   default     = 4
 }
 
+variable "otel_config_s3_uri" {
+  description = "OTel Collector設定ファイルのS3 URI（例: s3://bucket/path/config.yaml）"
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)

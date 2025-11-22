@@ -41,7 +41,8 @@ resource "aws_ecs_task_definition" "otel" {
         }
       ]
 
-      command = ["--config=/etc/otel-collector-config.yaml"]
+      # S3 URIが指定されている場合はS3から設定を読み込み、そうでなければ環境変数ベースの設定を使用
+      command = var.otel_config_s3_uri != "" ? ["--config=${var.otel_config_s3_uri}"] : ["--config=env:OTEL_CONFIG"]
 
       logConfiguration = {
         logDriver = "awslogs"

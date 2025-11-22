@@ -6,6 +6,11 @@ resource "aws_cloudwatch_log_group" "grafana" {
   tags = var.tags
 }
 
+# S3からプロビジョニング設定をダウンロードするかどうか
+locals {
+  use_s3_provisioning = var.grafana_provisioning_s3_prefix != "" && !var.enable_efs
+}
+
 # ECS Task Definition for Grafana
 resource "aws_ecs_task_definition" "grafana" {
   family                   = "${var.project_name}-${var.environment}-grafana"
@@ -30,78 +35,149 @@ resource "aws_ecs_task_definition" "grafana" {
     }
   }
 
-  container_definitions = jsonencode([
-    {
-      name      = "grafana"
-      image     = "grafana/grafana:${var.grafana_version}"
-      essential = true
-
-      portMappings = [
-        {
-          containerPort = 3000
-          protocol      = "tcp"
-          name          = "grafana"
-        }
-      ]
-
-      environment = concat([
-        {
-          name  = "GF_SERVER_ROOT_URL"
-          value = var.grafana_root_url
-        },
-        {
-          name  = "GF_SECURITY_ADMIN_PASSWORD"
-          value = var.admin_password
-        },
-        {
-          name  = "GF_AUTH_SIGV4_AUTH_ENABLED"
-          value = "true"
-        },
-        {
-          name  = "AWS_REGION"
-          value = var.aws_region
-        },
-        {
-          name  = "AWS_SDK_LOAD_CONFIG"
-          value = "true"
-        },
-        {
-          name  = "GF_INSTALL_PLUGINS"
-          value = "grafana-amazonprometheus-datasource"
-        }
-        ], var.enable_efs ? [] : [
-        {
-          name  = "GF_PATHS_PROVISIONING"
-          value = "/etc/grafana/provisioning"
-        }
-      ])
-
-      mountPoints = var.enable_efs ? [
-        {
-          sourceVolume  = "grafana-storage"
-          containerPath = "/var/lib/grafana"
-          readOnly      = false
-        }
-      ] : []
-
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.grafana.name
-          "awslogs-region"        = var.aws_region
-          "awslogs-stream-prefix" = "grafana"
-        }
-      }
-
-      healthCheck = {
-        command     = ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/health || exit 1"]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 60
-      }
+  # S3からプロビジョニング設定をダウンロードする場合の共有ボリューム
+  dynamic "volume" {
+    for_each = local.use_s3_provisioning ? [1] : []
+    content {
+      name = "grafana-provisioning"
     }
-  ])
+  }
+
+  container_definitions = jsonencode(concat(
+    # initコンテナ: S3からプロビジョニング設定をダウンロード
+    local.use_s3_provisioning ? [
+      {
+        name      = "init-provisioning"
+        image     = "amazon/aws-cli:latest"
+        essential = false
+
+        # S3からプロビジョニングファイルをダウンロード
+        command = [
+          "sh", "-c",
+          "aws s3 sync ${var.grafana_provisioning_s3_prefix} /provisioning/ && echo 'Provisioning files downloaded successfully'"
+        ]
+
+        environment = [
+          {
+            name  = "AWS_REGION"
+            value = var.aws_region
+          }
+        ]
+
+        mountPoints = [
+          {
+            sourceVolume  = "grafana-provisioning"
+            containerPath = "/provisioning"
+            readOnly      = false
+          }
+        ]
+
+        logConfiguration = {
+          logDriver = "awslogs"
+          options = {
+            "awslogs-group"         = aws_cloudwatch_log_group.grafana.name
+            "awslogs-region"        = var.aws_region
+            "awslogs-stream-prefix" = "init"
+          }
+        }
+      }
+    ] : [],
+    # メインコンテナ: Grafana
+    [
+      {
+        name      = "grafana"
+        image     = "grafana/grafana:${var.grafana_version}"
+        essential = true
+
+        # S3プロビジョニングを使用する場合、initコンテナの完了を待つ
+        dependsOn = local.use_s3_provisioning ? [
+          {
+            containerName = "init-provisioning"
+            condition     = "SUCCESS"
+          }
+        ] : []
+
+        portMappings = [
+          {
+            containerPort = 3000
+            protocol      = "tcp"
+            name          = "grafana"
+          }
+        ]
+
+        environment = concat([
+          {
+            name  = "GF_SERVER_ROOT_URL"
+            value = var.grafana_root_url
+          },
+          {
+            name  = "GF_SECURITY_ADMIN_PASSWORD"
+            value = var.admin_password
+          },
+          {
+            name  = "GF_AUTH_SIGV4_AUTH_ENABLED"
+            value = "true"
+          },
+          {
+            name  = "AWS_REGION"
+            value = var.aws_region
+          },
+          {
+            name  = "AWS_SDK_LOAD_CONFIG"
+            value = "true"
+          },
+          {
+            name  = "GF_INSTALL_PLUGINS"
+            value = "grafana-amazonprometheus-datasource"
+          }
+          ],
+          # S3プロビジョニングまたはEFSを使用しない場合のみプロビジョニングパスを設定
+          local.use_s3_provisioning ? [
+            {
+              name  = "GF_PATHS_PROVISIONING"
+              value = "/etc/grafana/provisioning"
+            }
+          ] : []
+        )
+
+        mountPoints = concat(
+          # EFSマウント
+          var.enable_efs ? [
+            {
+              sourceVolume  = "grafana-storage"
+              containerPath = "/var/lib/grafana"
+              readOnly      = false
+            }
+          ] : [],
+          # S3からダウンロードしたプロビジョニング設定をマウント
+          local.use_s3_provisioning ? [
+            {
+              sourceVolume  = "grafana-provisioning"
+              containerPath = "/etc/grafana/provisioning"
+              readOnly      = true
+            }
+          ] : []
+        )
+
+        logConfiguration = {
+          logDriver = "awslogs"
+          options = {
+            "awslogs-group"         = aws_cloudwatch_log_group.grafana.name
+            "awslogs-region"        = var.aws_region
+            "awslogs-stream-prefix" = "grafana"
+          }
+        }
+
+        healthCheck = {
+          command     = ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/health || exit 1"]
+          interval    = 30
+          timeout     = 5
+          retries     = 3
+          startPeriod = 60
+        }
+      }
+    ]
+  ))
 
   tags = var.tags
 }

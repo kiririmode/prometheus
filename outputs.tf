@@ -63,3 +63,13 @@ output "efs_file_system_id" {
   description = "EFS file system ID (if enabled)"
   value       = var.enable_grafana_efs ? module.efs[0].file_system_id : null
 }
+
+output "config_bucket_id" {
+  description = "設定ファイル保存用S3バケットID"
+  value       = module.config_storage.bucket_id
+}
+
+output "otel_config_s3_uri" {
+  description = "OTel Collector設定ファイルのS3 URI"
+  value       = module.config_storage.otel_config_s3_uri
+}

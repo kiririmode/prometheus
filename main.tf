@@ -54,6 +54,7 @@ module "iam" {
   environment       = var.environment
   amp_workspace_arn = module.amp.workspace_arn
   aws_region        = var.aws_region
+  config_bucket_arn = module.config_storage.bucket_arn
 
   tags = local.common_tags
 }
@@ -65,6 +66,34 @@ module "amp" {
   project_name       = var.project_name
   environment        = var.environment
   amp_retention_days = var.amp_retention_days
+
+  tags = local.common_tags
+}
+
+# Phase 2: 設定ファイルストレージ（S3）
+module "config_storage" {
+  source = "./modules/config-storage"
+
+  project_name = var.project_name
+  environment  = var.environment
+
+  # OTel Collector設定（環境変数を展開）
+  otel_collector_config = templatefile("${path.module}/configs/otel-collector-config.yaml", {
+    AMP_REMOTE_WRITE_ENDPOINT = module.amp.remote_write_endpoint
+    AWS_REGION                = var.aws_region
+  })
+
+  # Grafana データソース設定（環境変数を展開）
+  grafana_datasources_config = templatefile("${path.module}/configs/grafana/provisioning/datasources/amp-datasource.yaml", {
+    AMP_QUERY_ENDPOINT = module.amp.query_endpoint
+    AWS_REGION         = var.aws_region
+  })
+
+  # Grafana ダッシュボードプロバイダー設定
+  grafana_dashboards_config = file("${path.module}/configs/grafana/provisioning/dashboards/dashboards.yaml")
+
+  # サンプルダッシュボード
+  grafana_sample_dashboard = file("${path.module}/configs/grafana/provisioning/dashboards/default/sample-dashboard.json")
 
   tags = local.common_tags
 }
@@ -126,6 +155,7 @@ module "otel_collector" {
   enable_fargate_spot       = var.enable_fargate_spot
   alb_target_group_arn      = module.alb.otel_target_group_arn
   log_retention_days        = var.log_retention_days
+  otel_config_s3_uri        = module.config_storage.otel_config_s3_uri
 
   tags = local.common_tags
 }
@@ -134,21 +164,22 @@ module "otel_collector" {
 module "grafana" {
   source = "./modules/grafana"
 
-  project_name              = var.project_name
-  environment               = var.environment
-  ecs_cluster_id            = module.ecs_cluster.cluster_id
-  private_subnet_ids        = module.network.private_subnet_ids
-  grafana_security_group_id = module.security_groups.grafana_security_group_id
-  task_role_arn             = module.iam.grafana_task_role_arn
-  task_execution_role_arn   = module.iam.ecs_task_execution_role_arn
-  aws_region                = var.aws_region
-  cpu                       = var.grafana_cpu
-  memory                    = var.grafana_memory
-  admin_password            = var.grafana_admin_password
-  enable_efs                = var.enable_grafana_efs
-  efs_file_system_id        = var.enable_grafana_efs ? module.efs[0].file_system_id : null
-  alb_target_group_arn      = module.alb.grafana_target_group_arn
-  log_retention_days        = var.log_retention_days
+  project_name                   = var.project_name
+  environment                    = var.environment
+  ecs_cluster_id                 = module.ecs_cluster.cluster_id
+  private_subnet_ids             = module.network.private_subnet_ids
+  grafana_security_group_id      = module.security_groups.grafana_security_group_id
+  task_role_arn                  = module.iam.grafana_task_role_arn
+  task_execution_role_arn        = module.iam.ecs_task_execution_role_arn
+  aws_region                     = var.aws_region
+  cpu                            = var.grafana_cpu
+  memory                         = var.grafana_memory
+  admin_password                 = var.grafana_admin_password
+  enable_efs                     = var.enable_grafana_efs
+  efs_file_system_id             = var.enable_grafana_efs ? module.efs[0].file_system_id : null
+  alb_target_group_arn           = module.alb.grafana_target_group_arn
+  log_retention_days             = var.log_retention_days
+  grafana_provisioning_s3_prefix = module.config_storage.grafana_provisioning_s3_prefix
 
   tags = local.common_tags
 }

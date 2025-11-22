@@ -1,3 +1,17 @@
+# IAM Roles for ECS Tasks
+# OTel Collector、Grafana用のTask RoleとExecution Roleを定義
+
+terraform {
+  required_version = ">= 1.10.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.21.0"
+    }
+  }
+}
+
 # ECS Task Execution Role (Common for all ECS tasks)
 resource "aws_iam_role" "ecs_task_execution" {
   name = "${var.project_name}-${var.environment}-ecs-task-execution-role"
@@ -71,7 +85,7 @@ resource "aws_iam_role_policy" "otel_task" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Effect = "Allow"
         Action = [
@@ -88,7 +102,26 @@ resource "aws_iam_role_policy" "otel_task" {
         ]
         Resource = "arn:aws:logs:${var.aws_region}:*:log-group:/ecs/${var.project_name}-${var.environment}-otel-collector:*"
       }
-    ]
+      ],
+      # S3から設定ファイルを読み取る権限（config_bucket_arnが指定されている場合のみ）
+      var.config_bucket_arn != "" ? [
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:GetObjectVersion"
+          ]
+          Resource = "${var.config_bucket_arn}/*"
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:ListBucket"
+          ]
+          Resource = var.config_bucket_arn
+        }
+      ] : []
+    )
   })
 }
 
@@ -118,7 +151,7 @@ resource "aws_iam_role_policy" "grafana_task" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Effect = "Allow"
         Action = [
@@ -138,6 +171,25 @@ resource "aws_iam_role_policy" "grafana_task" {
         ]
         Resource = "arn:aws:logs:${var.aws_region}:*:log-group:/ecs/${var.project_name}-${var.environment}-grafana:*"
       }
-    ]
+      ],
+      # S3から設定ファイルを読み取る権限（config_bucket_arnが指定されている場合のみ）
+      var.config_bucket_arn != "" ? [
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:GetObjectVersion"
+          ]
+          Resource = "${var.config_bucket_arn}/*"
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:ListBucket"
+          ]
+          Resource = var.config_bucket_arn
+        }
+      ] : []
+    )
   })
 }

@@ -87,9 +87,12 @@ Terraformのstateファイルを管理するS3バケットを作成する。
 #### Terraform実行手順
 
 ```bash
-# 1. 変数ファイルの作成
-cp terraform.tfvars.example terraform.tfvars
-# terraform.tfvarsを編集（environment, owner, パスワード等を設定）
+# 0. 環境ディレクトリに移動
+cd environments/dev
+
+# 1. 変数ファイルの確認・編集（必要に応じて）
+# terraform.tfvarsは既に作成済み、必要に応じて編集
+vim terraform.tfvars
 
 # 2. 初期化
 terraform init
@@ -115,6 +118,8 @@ terraform output -json > outputs.json  # JSON形式で保存
 - `grafana_admin_password` - Grafana管理者パスワード（sensitive）
 - `amp_workspace_id` - AMP Workspace ID
 - `amp_remote_write_endpoint` - AMP Remote Writeエンドポイント
+- `config_bucket_id` - 設定ファイル保存用S3バケットID
+- `otel_config_s3_uri` - OTel Collector設定ファイルのS3 URI
 
 ## アーキテクチャ概要
 
@@ -156,19 +161,52 @@ ECS Fargate: Grafana (Self-hosted)
 
 ## Terraform構成の特徴
 
+### ディレクトリ構造
+
+```
+.
+├── environments/               # 環境別Terraform設定
+│   └── dev/                    # Dev環境
+│       ├── main.tf             # モジュール呼び出し
+│       ├── variables.tf        # 変数定義
+│       ├── outputs.tf          # 出力定義
+│       ├── locals.tf           # ローカル変数
+│       ├── backend.tf          # S3バックエンド設定
+│       └── terraform.tfvars    # 環境変数値
+│
+├── modules/                    # 再利用可能なモジュール
+│   ├── network/                # VPC、サブネット、IGW、NAT
+│   ├── security-groups/        # 各コンポーネントのSG
+│   ├── iam/                    # Task Role、Execution Role
+│   ├── amp/                    # AMP Workspace
+│   ├── config-storage/         # 設定ファイル用S3バケット（※新規追加）
+│   ├── efs/                    # Grafana用永続ストレージ（オプション）
+│   ├── ecs-cluster/            # Fargateクラスター
+│   ├── alb/                    # ALB×2（OTel、Grafana用）
+│   ├── otel-collector/         # OTel Collectorタスク定義
+│   └── grafana/                # Grafanaタスク定義
+│
+├── configs/                    # アプリケーション設定ファイル
+│   ├── otel-collector-config.yaml
+│   └── grafana/provisioning/
+│
+└── scripts/                    # セットアップスクリプト
+```
+
 ### モジュール構造
 
 すべてのコンポーネントは再利用可能な独立モジュールとして実装されている：
 
 - `modules/network/` - VPC、サブネット、IGW、NAT
 - `modules/security-groups/` - 各コンポーネントのSG
-- `modules/iam/` - Task Role、Execution Role
+- `modules/iam/` - Task Role、Execution Role、S3読み取り権限
 - `modules/amp/` - AMP Workspace
+- `modules/config-storage/` - 設定ファイル用S3バケット（OTel/Grafana設定の保存）
 - `modules/efs/` - Grafana用永続ストレージ（オプション）
 - `modules/ecs-cluster/` - Fargateクラスター
 - `modules/alb/` - ALB×2（OTel、Grafana用）
-- `modules/otel-collector/` - OTel Collectorタスク定義
-- `modules/grafana/` - Grafanaタスク定義
+- `modules/otel-collector/` - OTel Collectorタスク定義（S3から設定読み込み）
+- `modules/grafana/` - Grafanaタスク定義（initコンテナでS3からプロビジョニング取得）
 
 ### ベストプラクティス
 
@@ -184,8 +222,8 @@ ECS Fargate: Grafana (Self-hosted)
 
 ### IAM Roles
 
-- **OTel Collector Task Role**: `aps:RemoteWrite` 権限必須
-- **Grafana Task Role**: `aps:QueryMetrics`, `aps:GetSeries` 等の読み取り権限
+- **OTel Collector Task Role**: `aps:RemoteWrite` 権限、S3設定ファイル読み取り権限
+- **Grafana Task Role**: `aps:QueryMetrics`, `aps:GetSeries` 等の読み取り権限、S3設定ファイル読み取り権限
 - **ECS Task Execution Role**: ECR pull、CloudWatch Logs、Secrets Manager
 
 ### Security Groups
@@ -328,6 +366,14 @@ deep_research(query="OpenTelemetry Collector performance optimization on AWS")
 1. CloudWatch Logs確認: `/ecs/grafana`
 2. JSON構文エラーチェック: `jq . dashboard.json`
 3. 環境変数確認: `GF_PATHS_PROVISIONING=/etc/grafana/provisioning`
+4. S3からの設定ファイル同期確認（initコンテナログ）
+
+### S3設定ファイルが読み込まれない
+
+1. S3バケットに設定ファイルがアップロードされているか確認
+2. IAM Task Roleに `s3:GetObject`, `s3:ListBucket` 権限があるか確認
+3. OTel Collectorの場合: `--config=s3://...` の形式でS3 URIが正しいか確認
+4. Grafanaの場合: initコンテナのログで `aws s3 sync` エラーを確認
 
 ## 重要な設計判断
 
@@ -360,6 +406,7 @@ AWS Managed Grafanaは高価（$250/月～）であり、開発環境では小�
 ### Phase 2: データストレージ
 
 - AMPモジュール
+- config-storageモジュール（OTel/Grafana設定ファイル用S3バケット）
 - EFSモジュール（オプション、Dashboards as Code使用時は不要）
 
 ### Phase 3: コンピューティング
@@ -408,11 +455,13 @@ AWS Managed Grafanaは高価（$250/月～）であり、開発環境では小�
    - S3バケット（tfstate管理用）: `visualization-otel-tfstate-<環境名>`
    - 注意: Terraform 1.10以降では `use_lockfile = true` により DynamoDB 不要
 
-2. **変数ファイルの作成**
+2. **変数ファイルの確認**
 
    ```bash
-   cp terraform.tfvars.example terraform.tfvars
-   # terraform.tfvarsを編集
+   cd environments/dev
+   # terraform.tfvarsは既に作成済み
+   # 必要に応じて編集（owner、grafana_admin_password等）
+   vim terraform.tfvars
    ```
 
 3. **AWS認証情報の設定**

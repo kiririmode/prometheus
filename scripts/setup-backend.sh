@@ -1,47 +1,81 @@
 #!/bin/bash
 set -e
 
-# Terraform Backend Setup Script
-# This script creates the S3 bucket and DynamoDB table for Terraform state management
+# Terraform バックエンド セットアップスクリプト
+# Terraform の state 管理用 S3 バケットを作成します
+# 注意: Terraform 1.10以降では S3 ネイティブロック機能により DynamoDB は不要です
 
-# Configuration
-BUCKET_NAME="prometheus-terraform-state-dev"
-DYNAMODB_TABLE="prometheus-terraform-lock"
+# 使用方法を表示
+usage() {
+    echo "使用方法: $0 <環境名>"
+    echo ""
+    echo "引数:"
+    echo "  環境名    対象環境 (dev, stg, prod)"
+    echo ""
+    echo "例:"
+    echo "  $0 dev"
+    echo "  $0 stg"
+    echo "  $0 prod"
+    exit 1
+}
+
+# 環境名のバリデーション
+validate_environment() {
+    case "$1" in
+        dev|stg|prod)
+            return 0
+            ;;
+        *)
+            echo "エラー: 無効な環境名 '$1'"
+            echo "有効な環境名: dev, stg, prod"
+            exit 1
+            ;;
+    esac
+}
+
+# 環境名の引数チェック
+if [ -z "$1" ]; then
+    usage
+fi
+
+ENVIRONMENT="$1"
+validate_environment "${ENVIRONMENT}"
+
+# 設定
+BUCKET_NAME="visualization-otel-tfstate-${ENVIRONMENT}"
 AWS_REGION="ap-northeast-1"
-ENVIRONMENT="dev"
 
 echo "=========================================="
-echo "Terraform Backend Setup"
+echo "Terraform バックエンド セットアップ"
 echo "=========================================="
-echo "Bucket Name: ${BUCKET_NAME}"
-echo "DynamoDB Table: ${DYNAMODB_TABLE}"
-echo "Region: ${AWS_REGION}"
-echo "Environment: ${ENVIRONMENT}"
+echo "環境: ${ENVIRONMENT}"
+echo "S3バケット名: ${BUCKET_NAME}"
+echo "リージョン: ${AWS_REGION}"
 echo "=========================================="
 echo ""
 
-# Check if AWS CLI is installed
+# AWS CLI のインストール確認
 if ! command -v aws &> /dev/null; then
-    echo "Error: AWS CLI is not installed. Please install it first."
+    echo "エラー: AWS CLI がインストールされていません。先にインストールしてください。"
     exit 1
 fi
 
-# Check AWS credentials
-echo "Checking AWS credentials..."
+# AWS 認証情報の確認
+echo "AWS 認証情報を確認中..."
 if ! aws sts get-caller-identity &> /dev/null; then
-    echo "Error: AWS credentials are not configured."
-    echo "Please run 'aws configure' to set up your credentials."
+    echo "エラー: AWS 認証情報が設定されていません。"
+    echo "'aws configure' を実行して認証情報を設定してください。"
     exit 1
 fi
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-echo "AWS Account ID: ${ACCOUNT_ID}"
+echo "AWS アカウント ID: ${ACCOUNT_ID}"
 echo ""
 
-# Create S3 bucket
-echo "Creating S3 bucket: ${BUCKET_NAME}..."
+# S3 バケットの作成
+echo "S3バケットを作成中: ${BUCKET_NAME}..."
 if aws s3 ls "s3://${BUCKET_NAME}" 2>&1 | grep -q 'NoSuchBucket'; then
-    # Create bucket with LocationConstraint for regions other than us-east-1
+    # us-east-1 以外のリージョンでは LocationConstraint が必要
     if [ "${AWS_REGION}" = "us-east-1" ]; then
         aws s3 mb "s3://${BUCKET_NAME}" \
             --region "${AWS_REGION}"
@@ -51,21 +85,21 @@ if aws s3 ls "s3://${BUCKET_NAME}" 2>&1 | grep -q 'NoSuchBucket'; then
             --region "${AWS_REGION}" \
             --create-bucket-configuration LocationConstraint="${AWS_REGION}"
     fi
-    echo "✓ S3 bucket created successfully"
+    echo "✓ S3バケットを作成しました"
 else
-    echo "✓ S3 bucket already exists"
+    echo "✓ S3バケットは既に存在します"
 fi
 
-# Enable versioning
-echo "Enabling versioning on S3 bucket..."
+# バージョニングの有効化
+echo "S3バケットのバージョニングを有効化中..."
 aws s3api put-bucket-versioning \
     --bucket "${BUCKET_NAME}" \
     --versioning-configuration Status=Enabled \
     --region "${AWS_REGION}"
-echo "✓ Versioning enabled"
+echo "✓ バージョニングを有効化しました"
 
-# Enable encryption
-echo "Enabling default encryption on S3 bucket..."
+# 暗号化の有効化
+echo "S3バケットのデフォルト暗号化を有効化中..."
 aws s3api put-bucket-encryption \
     --bucket "${BUCKET_NAME}" \
     --server-side-encryption-configuration '{
@@ -77,19 +111,19 @@ aws s3api put-bucket-encryption \
         }]
     }' \
     --region "${AWS_REGION}"
-echo "✓ Encryption enabled"
+echo "✓ 暗号化を有効化しました"
 
-# Block public access
-echo "Blocking public access to S3 bucket..."
+# パブリックアクセスのブロック
+echo "S3バケットのパブリックアクセスをブロック中..."
 aws s3api put-public-access-block \
     --bucket "${BUCKET_NAME}" \
     --public-access-block-configuration \
         "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true" \
     --region "${AWS_REGION}"
-echo "✓ Public access blocked"
+echo "✓ パブリックアクセスをブロックしました"
 
-# Add bucket policy
-echo "Adding bucket policy..."
+# バケットポリシーの追加
+echo "バケットポリシーを追加中..."
 BUCKET_POLICY=$(cat <<EOF
 {
     "Version": "2012-10-17",
@@ -118,16 +152,17 @@ echo "${BUCKET_POLICY}" | aws s3api put-bucket-policy \
     --bucket "${BUCKET_NAME}" \
     --policy file:///dev/stdin \
     --region "${AWS_REGION}"
-echo "✓ Bucket policy applied"
+echo "✓ バケットポリシーを適用しました"
 
-# Add lifecycle policy for old versions (optional)
-echo "Adding lifecycle policy for old versions..."
+# ライフサイクルポリシーの追加（古いバージョンの自動削除）
+echo "ライフサイクルポリシーを追加中..."
 LIFECYCLE_POLICY=$(cat <<EOF
 {
     "Rules": [
         {
-            "Id": "DeleteOldVersions",
+            "ID": "DeleteOldVersions",
             "Status": "Enabled",
+            "Prefix": "",
             "NoncurrentVersionExpiration": {
                 "NoncurrentDays": 90
             }
@@ -141,10 +176,10 @@ echo "${LIFECYCLE_POLICY}" | aws s3api put-bucket-lifecycle-configuration \
     --bucket "${BUCKET_NAME}" \
     --lifecycle-configuration file:///dev/stdin \
     --region "${AWS_REGION}"
-echo "✓ Lifecycle policy applied"
+echo "✓ ライフサイクルポリシーを適用しました（90日後に古いバージョンを削除）"
 
-# Add tags
-echo "Adding tags to S3 bucket..."
+# タグの追加
+echo "S3バケットにタグを追加中..."
 aws s3api put-bucket-tagging \
     --bucket "${BUCKET_NAME}" \
     --tagging "TagSet=[
@@ -154,50 +189,24 @@ aws s3api put-bucket-tagging \
         {Key=Purpose,Value=terraform-state}
     ]" \
     --region "${AWS_REGION}"
-echo "✓ Tags added"
+echo "✓ タグを追加しました"
 
 echo ""
 echo "=========================================="
-echo "Creating DynamoDB table for state locking..."
-echo "=========================================="
-
-# Check if DynamoDB table exists
-if aws dynamodb describe-table --table-name "${DYNAMODB_TABLE}" --region "${AWS_REGION}" &> /dev/null; then
-    echo "✓ DynamoDB table already exists"
-else
-    # Create DynamoDB table
-    aws dynamodb create-table \
-        --table-name "${DYNAMODB_TABLE}" \
-        --attribute-definitions AttributeName=LockID,AttributeType=S \
-        --key-schema AttributeName=LockID,KeyType=HASH \
-        --billing-mode PAY_PER_REQUEST \
-        --region "${AWS_REGION}" \
-        --tags \
-            Key=Environment,Value="${ENVIRONMENT}" \
-            Key=Project,Value=prometheus-monitoring \
-            Key=ManagedBy,Value=terraform \
-            Key=Purpose,Value=terraform-state-lock
-
-    echo "✓ DynamoDB table created successfully"
-
-    # Wait for table to be active
-    echo "Waiting for DynamoDB table to become active..."
-    aws dynamodb wait table-exists \
-        --table-name "${DYNAMODB_TABLE}" \
-        --region "${AWS_REGION}"
-    echo "✓ DynamoDB table is active"
-fi
-
-echo ""
-echo "=========================================="
-echo "Backend Setup Complete!"
+echo "バックエンドのセットアップが完了しました！"
 echo "=========================================="
 echo ""
-echo "S3 Bucket: ${BUCKET_NAME}"
-echo "DynamoDB Table: ${DYNAMODB_TABLE}"
-echo "Region: ${AWS_REGION}"
+echo "環境: ${ENVIRONMENT}"
+echo "S3バケット: ${BUCKET_NAME}"
+echo "リージョン: ${AWS_REGION}"
 echo ""
-echo "You can now run:"
+echo "backend.tf に以下の値を設定してください:"
+echo "  bucket       = \"${BUCKET_NAME}\""
+echo "  key          = \"${ENVIRONMENT}/terraform.tfstate\""
+echo "  region       = \"${AWS_REGION}\""
+echo "  use_lockfile = true  # S3ネイティブロック（Terraform 1.10以降）"
+echo ""
+echo "次のコマンドを実行できます:"
 echo "  terraform init"
 echo "  terraform plan"
 echo "  terraform apply"

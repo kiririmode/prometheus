@@ -46,23 +46,29 @@ git commit -m "message"
 
 #### バックエンド構築（初回のみ）
 
-Terraformのstateファイルを管理するS3バケットとDynamoDBテーブルを作成する。
+Terraformのstateファイルを管理するS3バケットを作成する。
 
 ```bash
 # 自動セットアップスクリプトを使用（推奨）
-./scripts/setup-backend.sh
+./scripts/setup-backend.sh <環境名>
+
+# 例
+./scripts/setup-backend.sh dev
+./scripts/setup-backend.sh stg
+./scripts/setup-backend.sh prod
 ```
 
 このスクリプトは以下を自動的に実行する：
 
-- S3バケットの作成（`prometheus-terraform-state-dev`）
+- S3バケットの作成（`visualization-otel-tfstate-<環境名>`）
 - バージョニングの有効化
 - AES256暗号化の設定
 - パブリックアクセスのブロック
 - TLS強制のバケットポリシー適用
 - 90日後に古いバージョンを削除するライフサイクルポリシー
-- DynamoDBテーブルの作成（`prometheus-terraform-lock`、PAY_PER_REQUESTモード）
 - 適切なタグの設定
+
+**注意**: Terraform 1.10以降では S3 ネイティブロック機能（`use_lockfile = true`）により DynamoDB テーブルは不要。
 
 **手動セットアップ（非推奨）**: 手動で作成する場合は `architecture.md` のデプロイ手順を参照。
 
@@ -72,7 +78,10 @@ Terraformのstateファイルを管理するS3バケットとDynamoDBテーブ�
 
 ```bash
 # バックエンドのクリーンアップ
-./scripts/destroy-backend.sh
+./scripts/destroy-backend.sh <環境名>
+
+# 例
+./scripts/destroy-backend.sh dev
 ```
 
 #### Terraform実行手順
@@ -163,9 +172,9 @@ ECS Fargate: Grafana (Self-hosted)
 
 ### ベストプラクティス
 
-1. **State管理**: S3バックエンド + DynamoDB state locking必須
-   - セットアップ: `./scripts/setup-backend.sh` で自動構築
-   - バックエンド設定: `backend.tf`
+1. **State管理**: S3バックエンド + S3ネイティブロック（Terraform 1.10以降）
+   - セットアップ: `./scripts/setup-backend.sh <環境名>` で自動構築
+   - バックエンド設定: `backend.tf`（`use_lockfile = true` を設定）
    - リージョン: ap-northeast-1
 2. **タグ戦略**: `locals.tf` で共通タグを定義（Environment, Project, ManagedBy）
 3. **命名規則**: `{project}-{environment}-{resource-type}-{name}` 形式
@@ -391,12 +400,13 @@ AWS Managed Grafanaは高価（$250/月～）であり、開発環境では小�
 1. **バックエンドのセットアップ**（初回のみ）
 
    ```bash
-   ./scripts/setup-backend.sh
+   ./scripts/setup-backend.sh <環境名>
+   # 例: ./scripts/setup-backend.sh dev
    ```
 
    これにより以下が自動作成される：
-   - S3バケット（tfstate管理用）: `prometheus-terraform-state-dev`
-   - DynamoDBテーブル（state lock用）: `prometheus-terraform-lock`
+   - S3バケット（tfstate管理用）: `visualization-otel-tfstate-<環境名>`
+   - 注意: Terraform 1.10以降では `use_lockfile = true` により DynamoDB 不要
 
 2. **変数ファイルの作成**
 
@@ -429,3 +439,4 @@ AWS Managed Grafanaは高価（$250/月～）であり、開発環境では小�
 - Terraform: 公式フォーマッター（`terraform fmt`）使用
 - Markdown: Prettier + textlint（日本語校正）
 - JSON: Prettier使用
+- **コメント・ログ出力**: 全てのコード（Terraform、シェルスクリプト、設定ファイル等）においてコメントやログ出力は日本語で記述すること

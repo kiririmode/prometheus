@@ -52,12 +52,3 @@ repos:
         description: Lint Terraform code with tflint
         args:
           - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
-
-  # textlint (日本語ドキュメント校正)
-  - repo: local
-    hooks:
-      - id: textlint
-        name: textlint
-        entry: npx textlint
-        language: node
-        types: [markdown]

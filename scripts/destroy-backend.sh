@@ -1,53 +1,88 @@
 #!/bin/bash
 set -e
 
-# Terraform Backend Cleanup Script
-# This script removes the S3 bucket and DynamoDB table used for Terraform state management
-# WARNING: This will delete all Terraform state files!
+# Terraform バックエンド クリーンアップスクリプト
+# Terraform state 管理用の S3 バケットを削除します
+# 警告: このスクリプトは全ての Terraform state ファイルを削除します！
 
-# Configuration
-BUCKET_NAME="prometheus-terraform-state-dev"
-DYNAMODB_TABLE="prometheus-terraform-lock"
+# 使用方法を表示
+usage() {
+    echo "使用方法: $0 <環境名>"
+    echo ""
+    echo "引数:"
+    echo "  環境名    対象環境 (dev, stg, prod)"
+    echo ""
+    echo "例:"
+    echo "  $0 dev"
+    echo "  $0 stg"
+    echo "  $0 prod"
+    exit 1
+}
+
+# 環境名のバリデーション
+validate_environment() {
+    case "$1" in
+        dev|stg|prod)
+            return 0
+            ;;
+        *)
+            echo "エラー: 無効な環境名 '$1'"
+            echo "有効な環境名: dev, stg, prod"
+            exit 1
+            ;;
+    esac
+}
+
+# 環境名の引数チェック
+if [ -z "$1" ]; then
+    usage
+fi
+
+ENVIRONMENT="$1"
+validate_environment "${ENVIRONMENT}"
+
+# 設定
+BUCKET_NAME="visualization-otel-tfstate-${ENVIRONMENT}"
 AWS_REGION="ap-northeast-1"
 
 echo "=========================================="
-echo "Terraform Backend Cleanup"
+echo "Terraform バックエンド クリーンアップ"
 echo "=========================================="
-echo "Bucket Name: ${BUCKET_NAME}"
-echo "DynamoDB Table: ${DYNAMODB_TABLE}"
-echo "Region: ${AWS_REGION}"
+echo "環境: ${ENVIRONMENT}"
+echo "S3バケット名: ${BUCKET_NAME}"
+echo "リージョン: ${AWS_REGION}"
 echo "=========================================="
 echo ""
-echo "WARNING: This will delete all Terraform state files!"
-echo "This action cannot be undone."
+echo "警告: ${ENVIRONMENT} 環境の全ての Terraform state ファイルが削除されます！"
+echo "この操作は取り消せません。"
 echo ""
-read -r -p "Are you sure you want to continue? (yes/no): " CONFIRM
+read -r -p "続行しますか？ (yes/no): " CONFIRM
 
 if [ "${CONFIRM}" != "yes" ]; then
-    echo "Aborted."
+    echo "中止しました。"
     exit 0
 fi
 
-# Check if AWS CLI is installed
+# AWS CLI のインストール確認
 if ! command -v aws &> /dev/null; then
-    echo "Error: AWS CLI is not installed."
+    echo "エラー: AWS CLI がインストールされていません。"
     exit 1
 fi
 
-# Check AWS credentials
-echo "Checking AWS credentials..."
+# AWS 認証情報の確認
+echo "AWS 認証情報を確認中..."
 if ! aws sts get-caller-identity &> /dev/null; then
-    echo "Error: AWS credentials are not configured."
+    echo "エラー: AWS 認証情報が設定されていません。"
     exit 1
 fi
 
-# Delete S3 bucket
-echo "Deleting S3 bucket: ${BUCKET_NAME}..."
+# S3 バケットの削除
+echo "S3バケットを削除中: ${BUCKET_NAME}..."
 if aws s3 ls "s3://${BUCKET_NAME}" 2>&1 | grep -q 'NoSuchBucket'; then
-    echo "✓ S3 bucket does not exist"
+    echo "✓ S3バケットは存在しません"
 else
-    # Remove all objects and versions
-    echo "Removing all objects and versions from bucket..."
+    # 全てのオブジェクトとバージョンを削除
+    echo "バケット内の全てのオブジェクトとバージョンを削除中..."
     aws s3api delete-objects \
         --bucket "${BUCKET_NAME}" \
         --delete "$(aws s3api list-object-versions \
@@ -57,7 +92,7 @@ else
             --region "${AWS_REGION}")" \
         --region "${AWS_REGION}" 2>/dev/null || true
 
-    # Remove delete markers
+    # 削除マーカーを削除
     aws s3api delete-objects \
         --bucket "${BUCKET_NAME}" \
         --delete "$(aws s3api list-object-versions \
@@ -67,28 +102,17 @@ else
             --region "${AWS_REGION}")" \
         --region "${AWS_REGION}" 2>/dev/null || true
 
-    # Delete bucket
+    # バケットを削除
     aws s3 rb "s3://${BUCKET_NAME}" --force --region "${AWS_REGION}"
-    echo "✓ S3 bucket deleted successfully"
-fi
-
-# Delete DynamoDB table
-echo "Deleting DynamoDB table: ${DYNAMODB_TABLE}..."
-if aws dynamodb describe-table --table-name "${DYNAMODB_TABLE}" --region "${AWS_REGION}" &> /dev/null; then
-    aws dynamodb delete-table \
-        --table-name "${DYNAMODB_TABLE}" \
-        --region "${AWS_REGION}"
-
-    echo "Waiting for DynamoDB table to be deleted..."
-    aws dynamodb wait table-not-exists \
-        --table-name "${DYNAMODB_TABLE}" \
-        --region "${AWS_REGION}"
-    echo "✓ DynamoDB table deleted successfully"
-else
-    echo "✓ DynamoDB table does not exist"
+    echo "✓ S3バケットを削除しました"
 fi
 
 echo ""
 echo "=========================================="
-echo "Backend Cleanup Complete!"
+echo "バックエンドのクリーンアップが完了しました！"
+echo "=========================================="
+echo ""
+echo "環境: ${ENVIRONMENT}"
+echo "削除したS3バケット: ${BUCKET_NAME}"
+echo ""
 echo "=========================================="

@@ -44,6 +44,19 @@ receivers:
 # 複数のプロセッサーを順番に適用できます（パイプライン処理）。
 #
 processors:
+  # リソース検出プロセッサー: ECS タスクの情報を自動検出してラベルに追加
+  # ECS Task Metadata Endpoint (V3/V4) から以下の属性を自動取得します:
+  #   - aws.ecs.task.id: タスクの一意識別子（冗長構成時の Collector 識別に使用）
+  #   - aws.ecs.cluster.name: ECS クラスター名
+  #   - aws.ecs.task.family: タスク定義ファミリー名
+  #   - host.name: コンテナのホスト名
+  #   - cloud.provider: aws
+  #   - cloud.platform: aws_ecs
+  resourcedetection:
+    detectors: [ecs, env] # ECS メタデータ + 環境変数から検出
+    timeout: 2s # メタデータ取得のタイムアウト
+    override: false # 送信元が設定した値を尊重（上書きしない）
+
   # バッチプロセッサー: データをまとめて送信することで効率化
   # 個別に送信すると通信オーバーヘッドが大きいため、一定量をまとめて送ります
   batch:
@@ -74,6 +87,8 @@ processors:
       - key: deployment.environment
         from_attribute: ENVIRONMENT # 環境変数 ENVIRONMENT の値を使用
         action: upsert
+      # 【注意】Collector インスタンス識別は resourcedetection プロセッサーが自動設定する
+      # aws.ecs.task.id を使用します（手動設定不要）
 
 # ------------------------------------------------------------------------------
 # exporters（エクスポーター）: データの送信設定
@@ -146,7 +161,8 @@ service:
     # メトリクスパイプライン
     metrics:
       receivers: [otlp] # OTLP でデータを受信
-      processors: [memory_limiter, batch, resource] # メモリ制限 → バッチ化 → 属性追加
+      # 処理順序: メモリ制限 → ECS情報検出 → バッチ化 → 属性追加
+      processors: [memory_limiter, resourcedetection, batch, resource]
       exporters: [prometheusremotewrite, debug] # AMP に送信 + デバッグ出力
 
   # OTel Collector 自体のテレメトリ設定

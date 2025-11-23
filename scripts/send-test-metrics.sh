@@ -30,15 +30,15 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+    echo -e "${GREEN}[INFO]${NC} $1" >&2
 }
 
 log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
+    echo -e "${YELLOW}[WARN]${NC} $1" >&2
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
 show_help() {
@@ -116,7 +116,7 @@ log_info "エンドポイント: $METRICS_URL"
 log_info "サービス名: $SERVICE_NAME"
 log_info "送信回数: $COUNT"
 log_info "送信間隔: ${INTERVAL}秒"
-echo ""
+echo "" >&2
 
 # メトリクス送信関数
 send_metric() {
@@ -187,12 +187,15 @@ for i in $(seq 1 "$COUNT"); do
     log_info "[$i/$COUNT] メトリクス送信中..."
 
     # カウンターメトリクス（累積値として増加させる）
-    value=$((i * 10 + RANDOM % 10))
+    # RANDOM の代わりに /dev/urandom を使用（環境互換性のため）
+    random_part=$(od -An -tu1 -N1 /dev/urandom | tr -d ' ')
+    random_part=$((random_part % 10))
+    value=$((i * 10 + random_part))
 
     if send_metric "$value" "http_requests_total"; then
-        ((success_count++))
+        success_count=$((success_count + 1))
     else
-        ((fail_count++))
+        fail_count=$((fail_count + 1))
     fi
 
     # 最後のイテレーション以外は待機
@@ -201,20 +204,25 @@ for i in $(seq 1 "$COUNT"); do
     fi
 done
 
-echo ""
+echo "" >&2
 log_info "=== 送信結果 ==="
 log_info "成功: $success_count / $COUNT"
 if [[ $fail_count -gt 0 ]]; then
     log_warn "失敗: $fail_count / $COUNT"
 fi
 
-echo ""
+echo "" >&2
 log_info "=== 確認方法 ==="
-echo "1. CloudWatch Logs で確認:"
-echo "   aws logs tail /ecs/prometheus-dev-otel-collector --since 5m --region ap-northeast-1 | grep -i Metrics"
-echo ""
-echo "2. Grafana で確認:"
-echo "   URL: $(cd "$DEV_DIR" 2>/dev/null && terraform output -raw grafana_custom_url 2>/dev/null || echo "https://dashboard.kiririmo.de")"
-echo "   クエリ: http_requests_total{service_name=\"$SERVICE_NAME\"}"
+echo "1. CloudWatch Logs で確認:" >&2
+echo "   aws logs tail /ecs/prometheus-dev-otel-collector --since 5m --region ap-northeast-1 | grep -i Metrics" >&2
+echo "" >&2
+echo "2. Grafana で確認:" >&2
+echo "   URL: $(cd "$DEV_DIR" 2>/dev/null && terraform output -raw grafana_custom_url 2>/dev/null || echo "https://dashboard.kiririmo.de")" >&2
+echo "   クエリ: http_requests_total{service_name=\"$SERVICE_NAME\"}" >&2
 
-exit $fail_count
+# 1回でも失敗があれば終了コード1、全て成功なら0
+if [[ $fail_count -gt 0 ]]; then
+    exit 1
+else
+    exit 0
+fi

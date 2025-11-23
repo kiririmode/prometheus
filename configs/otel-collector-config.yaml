@@ -1,76 +1,158 @@
-# OpenTelemetry Collector Configuration for Prometheus Monitoring
-# This configuration receives OTLP metrics from Claude Code and exports to AMP
+# ==============================================================================
+# OpenTelemetry Collector 設定ファイル
+# ==============================================================================
+#
+# このファイルは OpenTelemetry Collector の動作を定義します。
+# OTel Collector は「テレメトリデータのハブ」として機能し、
+# 様々なソースからデータを受信し、加工して、様々な宛先に送信します。
+#
+# 【データフロー】
+#   Claude Code (OTLP) → Receiver → Processor → Exporter → AWS Managed Prometheus
+#
+# 【主要コンポーネント】
+#   - receivers:   データを受け取る入口（どこからデータを受信するか）
+#   - processors:  データを加工するパイプライン（バッチ処理、メモリ制限など）
+#   - exporters:   データを送り出す出口（どこにデータを送信するか）
+#   - extensions:  補助機能（認証、ヘルスチェックなど）
+#   - service:     上記コンポーネントを組み合わせてパイプラインを構成
+#
+# ==============================================================================
 
+# ------------------------------------------------------------------------------
+# receivers（レシーバー）: データの受信設定
+# ------------------------------------------------------------------------------
+# レシーバーは外部からテレメトリデータを受け取る入口です。
+# OTLP（OpenTelemetry Protocol）は OpenTelemetry の標準プロトコルで、
+# メトリクス、トレース、ログを統一的に扱えます。
+#
 receivers:
   otlp:
     protocols:
+      # HTTP プロトコル（REST API 形式）
+      # Claude Code はこのエンドポイントにメトリクスを送信します
       http:
-        endpoint: 0.0.0.0:4318
+        endpoint: 0.0.0.0:4318 # 全てのネットワークインターフェースで 4318 ポートを Listen
+      # gRPC プロトコル（高性能なバイナリ通信）
+      # 大量データの送信に適していますが、Claude Code は HTTP を使用
       grpc:
-        endpoint: 0.0.0.0:4317
+        endpoint: 0.0.0.0:4317 # 全てのネットワークインターフェースで 4317 ポートを Listen
 
+# ------------------------------------------------------------------------------
+# processors（プロセッサー）: データの加工設定
+# ------------------------------------------------------------------------------
+# プロセッサーは受信したデータを加工・変換します。
+# 複数のプロセッサーを順番に適用できます（パイプライン処理）。
+#
 processors:
+  # バッチプロセッサー: データをまとめて送信することで効率化
+  # 個別に送信すると通信オーバーヘッドが大きいため、一定量をまとめて送ります
   batch:
-    timeout: 10s
-    send_batch_size: 1024
-    send_batch_max_size: 2048
+    timeout: 10s # 最大待機時間（10秒経過したら送信）
+    send_batch_size: 1024 # 通常のバッチサイズ（1024データポイント）
+    send_batch_max_size: 2048 # 最大バッチサイズ（これを超えたら即送信）
 
+  # メモリリミッタープロセッサー: メモリ使用量を制限してOOMを防止
+  # 大量のデータが流入してもコンテナがクラッシュしないようにします
   memory_limiter:
-    check_interval: 1s
-    limit_mib: 512
-    spike_limit_mib: 128
+    check_interval: 1s # メモリ使用量のチェック間隔
+    limit_mib: 512 # メモリ上限（512MB）- これを超えるとデータを破棄
+    spike_limit_mib: 128 # スパイク許容量 - 急激な増加に対するバッファ
 
-  # Add resource attributes for better observability
+  # リソースプロセッサー: メトリクスにリソース属性（ラベル）を追加
+  # Prometheus/Grafana でフィルタリングする際に便利な属性を付与します
+  #
+  # 【注意】action: upsert は「既存の値があれば上書き、なければ追加」という動作です。
+  # つまり、送信元（Claude Code）が設定した service.name は上書きされます。
+  # 送信元の値を保持したい場合は action: insert（値がない場合のみ追加）を使用してください。
   resource:
     attributes:
+      # service.name: このメトリクスを生成したサービス名
       - key: service.name
         value: otel-collector
-        action: upsert
+        action: upsert # 常に otel-collector で上書き（送信元の値は無視される）
+      # deployment.environment: デプロイ環境（dev/stg/prod など）
       - key: deployment.environment
-        from_attribute: ENVIRONMENT
+        from_attribute: ENVIRONMENT # 環境変数 ENVIRONMENT の値を使用
         action: upsert
 
+# ------------------------------------------------------------------------------
+# exporters（エクスポーター）: データの送信設定
+# ------------------------------------------------------------------------------
+# エクスポーターは加工済みのデータを外部システムに送信します。
+# 複数のエクスポーターを設定して、同じデータを複数の宛先に送ることもできます。
+#
 exporters:
-  # Prometheus Remote Write to AWS Managed Prometheus
+  # Prometheus Remote Write エクスポーター: AWS Managed Prometheus にデータを送信
+  # 【重要】Prometheus は独自の「Remote Write」プロトコルを使用するため、
+  # OTLP → Prometheus Remote Write への変換が必要です（OTel Collector の役割）
   prometheusremotewrite:
-    endpoint: ${AMP_REMOTE_WRITE_ENDPOINT}
+    endpoint: ${AMP_REMOTE_WRITE_ENDPOINT} # 環境変数から AMP のエンドポイントを取得
     auth:
-      authenticator: sigv4auth
+      authenticator: sigv4auth # AWS SigV4 署名による認証（extensions で定義）
+    # リソース属性をメトリクスのラベルに変換
+    # true にすると service.name などがラベルとして付与されます
     resource_to_telemetry_conversion:
       enabled: true
 
-  # Debug output for troubleshooting (optional)
+  # デバッグエクスポーター: トラブルシューティング用にログ出力
+  # 本番環境では verbosity を下げるか、削除することを推奨
   debug:
-    verbosity: basic
-    sampling_initial: 5
-    sampling_thereafter: 200
+    verbosity: basic # 出力レベル: basic（基本情報のみ）/ normal / detailed
+    sampling_initial: 5 # 最初の5件は必ず出力
+    sampling_thereafter: 200 # 以降は200件ごとに1件出力（ログ量削減）
 
+# ------------------------------------------------------------------------------
+# extensions（エクステンション）: 補助機能の設定
+# ------------------------------------------------------------------------------
+# エクステンションはデータ処理パイプラインの外側で動作する補助機能です。
+# 認証、ヘルスチェック、デバッグ機能などを提供します。
+#
 extensions:
+  # AWS SigV4 認証: AWS サービスへのリクエストに署名を付与
+  # IAM ロールの認証情報を使用して、AMP への書き込み権限を証明します
   sigv4auth:
-    region: ${AWS_REGION}
-    service: aps
+    region: ${AWS_REGION} # AWS リージョン（環境変数から取得）
+    service: aps # AWS Managed Prometheus のサービス名
 
+  # ヘルスチェック: ALB や ECS からの死活監視に応答
+  # このエンドポイントが応答しないとコンテナが異常と判定されます
   health_check:
-    endpoint: 0.0.0.0:13133
-    path: /
+    endpoint: 0.0.0.0:13133 # ヘルスチェック用ポート
+    path: / # ヘルスチェックのパス（/ にアクセスで応答）
 
+  # pprof: Go のプロファイリングツール
+  # パフォーマンス問題の調査時に使用（通常は localhost のみ）
   pprof:
     endpoint: localhost:1777
 
+  # zPages: リアルタイムのデバッグ情報を提供
+  # /debug/tracez, /debug/pipelinez などでパイプラインの状態を確認できます
   zpages:
     endpoint: localhost:55679
 
+# ------------------------------------------------------------------------------
+# service（サービス）: パイプラインの組み立て
+# ------------------------------------------------------------------------------
+# service セクションで上記のコンポーネントを組み合わせて、
+# 実際のデータ処理パイプラインを構成します。
+#
 service:
+  # 有効にするエクステンションのリスト
   extensions: [sigv4auth, health_check, pprof, zpages]
 
+  # パイプライン定義: データの種類ごとに処理フローを設定
+  # 【データフロー】receivers → processors（左から右の順） → exporters
   pipelines:
+    # メトリクスパイプライン
     metrics:
-      receivers: [otlp]
-      processors: [memory_limiter, batch, resource]
-      exporters: [prometheusremotewrite, debug]
+      receivers: [otlp] # OTLP でデータを受信
+      processors: [memory_limiter, batch, resource] # メモリ制限 → バッチ化 → 属性追加
+      exporters: [prometheusremotewrite, debug] # AMP に送信 + デバッグ出力
 
+  # OTel Collector 自体のテレメトリ設定
+  # Collector の動作状況を監視するための設定です
   telemetry:
     logs:
-      level: info
+      level: info # ログレベル: debug / info / warn / error
     metrics:
-      level: detailed
+      level: detailed # 内部メトリクスの詳細度: none / basic / normal / detailed

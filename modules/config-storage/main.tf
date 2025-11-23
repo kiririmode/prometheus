@@ -19,6 +19,7 @@ resource "aws_s3_bucket" "config" {
 }
 
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 # バケットのバージョニング有効化
 resource "aws_s3_bucket_versioning" "config" {

@@ -136,3 +136,28 @@ variable "additional_tags" {
   type        = map(string)
   default     = {}
 }
+
+# ドメイン・HTTPS設定
+variable "domain_name" {
+  description = "ベースドメイン名（例: example.com）"
+  type        = string
+  default     = ""
+}
+
+variable "otel_subdomain" {
+  description = "OTel Collector用サブドメイン"
+  type        = string
+  default     = "otel"
+}
+
+variable "grafana_subdomain" {
+  description = "Grafana用サブドメイン"
+  type        = string
+  default     = "dashboard"
+}
+
+variable "enable_https" {
+  description = "HTTPSを有効化（domain_nameの設定が必要）"
+  type        = bool
+  default     = false
+}

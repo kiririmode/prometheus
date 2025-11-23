@@ -47,33 +47,32 @@ resource "aws_lb_target_group" "otel" {
   )
 }
 
-# HTTP Listener for OTel (HTTPSが無効な場合はターゲットグループに直接転送)
+# HTTP Listener for OTel
+# HTTPSが無効な場合: ターゲットグループに直接転送
+# HTTPSが有効な場合: HTTPSにリダイレクト
 resource "aws_lb_listener" "otel_http" {
-  count             = var.use_https ? 0 : 1
   load_balancer_arn = aws_lb.otel.arn
   port              = "80"
   protocol          = "HTTP"
 
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.otel.arn
+  dynamic "default_action" {
+    for_each = var.use_https ? [] : [1]
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.otel.arn
+    }
   }
-}
 
-# HTTP Listener for OTel (HTTPSが有効な場合はHTTPSにリダイレクト)
-resource "aws_lb_listener" "otel_http_redirect" {
-  count             = var.use_https ? 1 : 0
-  load_balancer_arn = aws_lb.otel.arn
-  port              = "80"
-  protocol          = "HTTP"
+  dynamic "default_action" {
+    for_each = var.use_https ? [1] : []
+    content {
+      type = "redirect"
 
-  default_action {
-    type = "redirect"
-
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
+      redirect {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
     }
   }
 }
@@ -142,33 +141,32 @@ resource "aws_lb_target_group" "grafana" {
   )
 }
 
-# HTTP Listener for Grafana (HTTPSが無効な場合はターゲットグループに直接転送)
+# HTTP Listener for Grafana
+# HTTPSが無効な場合: ターゲットグループに直接転送
+# HTTPSが有効な場合: HTTPSにリダイレクト
 resource "aws_lb_listener" "grafana_http" {
-  count             = var.use_https ? 0 : 1
   load_balancer_arn = aws_lb.grafana.arn
   port              = "80"
   protocol          = "HTTP"
 
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.grafana.arn
+  dynamic "default_action" {
+    for_each = var.use_https ? [] : [1]
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.grafana.arn
+    }
   }
-}
 
-# HTTP Listener for Grafana (HTTPSが有効な場合はHTTPSにリダイレクト)
-resource "aws_lb_listener" "grafana_http_redirect" {
-  count             = var.use_https ? 1 : 0
-  load_balancer_arn = aws_lb.grafana.arn
-  port              = "80"
-  protocol          = "HTTP"
+  dynamic "default_action" {
+    for_each = var.use_https ? [1] : []
+    content {
+      type = "redirect"
 
-  default_action {
-    type = "redirect"
-
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
+      redirect {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
     }
   }
 }

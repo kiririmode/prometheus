@@ -37,3 +37,13 @@ output "grafana_target_group_arn" {
   description = "Grafana target group ARN"
   value       = aws_lb_target_group.grafana.arn
 }
+
+output "otel_alb_zone_id" {
+  description = "OTel ALBのRoute53ホストゾーンID（Aliasレコード用）"
+  value       = aws_lb.otel.zone_id
+}
+
+output "grafana_alb_zone_id" {
+  description = "Grafana ALBのRoute53ホストゾーンID（Aliasレコード用）"
+  value       = aws_lb.grafana.zone_id
+}

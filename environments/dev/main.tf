@@ -126,6 +126,23 @@ module "ecs_cluster" {
   tags = local.common_tags
 }
 
+# Phase 2.5: Route53ホストゾーン参照（HTTPS有効時）
+data "aws_route53_zone" "main" {
+  count = var.enable_https && var.domain_name != "" ? 1 : 0
+  name  = var.domain_name
+}
+
+# Phase 2.5: ACM証明書（HTTPS有効時）
+module "acm" {
+  count  = var.enable_https && var.domain_name != "" ? 1 : 0
+  source = "../../modules/acm"
+
+  domain_name    = var.domain_name
+  hosted_zone_id = data.aws_route53_zone.main[0].zone_id
+
+  tags = local.common_tags
+}
+
 # Phase 3: Application Load Balancers
 module "alb" {
   source = "../../modules/alb"
@@ -137,7 +154,27 @@ module "alb" {
   otel_alb_security_group_id    = module.security_groups.otel_alb_security_group_id
   grafana_alb_security_group_id = module.security_groups.grafana_alb_security_group_id
 
+  # HTTPS設定
+  use_https               = var.enable_https && var.domain_name != ""
+  otel_certificate_arn    = var.enable_https && var.domain_name != "" ? module.acm[0].certificate_arn : ""
+  grafana_certificate_arn = var.enable_https && var.domain_name != "" ? module.acm[0].certificate_arn : ""
+
   tags = local.common_tags
+}
+
+# Phase 3.5: DNSレコード（HTTPS有効時）
+module "dns" {
+  count  = var.enable_https && var.domain_name != "" ? 1 : 0
+  source = "../../modules/dns"
+
+  hosted_zone_id       = data.aws_route53_zone.main[0].zone_id
+  domain_name          = var.domain_name
+  otel_subdomain       = var.otel_subdomain
+  grafana_subdomain    = var.grafana_subdomain
+  otel_alb_dns_name    = module.alb.otel_alb_dns_name
+  otel_alb_zone_id     = module.alb.otel_alb_zone_id
+  grafana_alb_dns_name = module.alb.grafana_alb_dns_name
+  grafana_alb_zone_id  = module.alb.grafana_alb_zone_id
 }
 
 # Phase 4: OpenTelemetry Collector

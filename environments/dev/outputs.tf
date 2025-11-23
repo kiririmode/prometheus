@@ -75,3 +75,19 @@ output "otel_config_s3_uri" {
   description = "OTel Collector設定ファイルのS3 URI"
   value       = module.config_storage.otel_config_s3_uri
 }
+
+# カスタムドメイン出力（HTTPS有効時）
+output "otel_custom_url" {
+  description = "OTel CollectorのカスタムドメインHTTPS URL"
+  value       = var.enable_https && var.domain_name != "" ? module.dns[0].otel_url : null
+}
+
+output "grafana_custom_url" {
+  description = "GrafanaのカスタムドメインHTTPS URL"
+  value       = var.enable_https && var.domain_name != "" ? module.dns[0].grafana_url : null
+}
+
+output "acm_certificate_arn" {
+  description = "ACM証明書のARN"
+  value       = var.enable_https && var.domain_name != "" ? module.acm[0].certificate_arn : null
+}

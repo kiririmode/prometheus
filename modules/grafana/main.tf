@@ -51,9 +51,11 @@ resource "aws_ecs_task_definition" "grafana" {
         image     = "amazon/aws-cli:latest"
         essential = false
 
+        # amazon/aws-cliイメージはAWS CLIがエントリーポイントのため、シェルを明示的に指定
+        entryPoint = ["/bin/sh", "-c"]
+
         # S3からプロビジョニングファイルをダウンロード
         command = [
-          "sh", "-c",
           "aws s3 sync ${var.grafana_provisioning_s3_prefix} /provisioning/ && echo 'Provisioning files downloaded successfully'"
         ]
 

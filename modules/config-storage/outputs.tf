@@ -10,7 +10,7 @@ output "bucket_arn" {
 
 output "otel_config_s3_uri" {
   description = "OTel Collector設定ファイルのS3 URI"
-  value       = "s3://${aws_s3_bucket.config.id}/${aws_s3_object.otel_config.key}"
+  value       = "s3://${aws_s3_bucket.config.id}.s3.${data.aws_region.current.name}.amazonaws.com/${aws_s3_object.otel_config.key}"
 }
 
 output "grafana_provisioning_s3_prefix" {

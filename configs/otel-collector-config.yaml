@@ -39,9 +39,9 @@ exporters:
     resource_to_telemetry_conversion:
       enabled: true
 
-  # CloudWatch Logs for debugging (optional)
-  logging:
-    loglevel: info
+  # Debug output for troubleshooting (optional)
+  debug:
+    verbosity: basic
     sampling_initial: 5
     sampling_thereafter: 200
 
@@ -67,11 +67,10 @@ service:
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, batch, resource]
-      exporters: [prometheusremotewrite, logging]
+      exporters: [prometheusremotewrite, debug]
 
   telemetry:
     logs:
       level: info
     metrics:
       level: detailed
-      address: 0.0.0.0:8888

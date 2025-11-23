@@ -120,6 +120,9 @@ terraform output -json > outputs.json  # JSON形式で保存
 - `amp_remote_write_endpoint` - AMP Remote Writeエンドポイント
 - `config_bucket_id` - 設定ファイル保存用S3バケットID
 - `otel_config_s3_uri` - OTel Collector設定ファイルのS3 URI
+- `otel_custom_url` - OTel CollectorのカスタムドメインHTTPS URL（HTTPS有効時）
+- `grafana_custom_url` - GrafanaのカスタムドメインHTTPS URL（HTTPS有効時）
+- `acm_certificate_arn` - ACM証明書のARN（HTTPS有効時）
 
 ## アーキテクチャ概要
 
@@ -179,10 +182,12 @@ ECS Fargate: Grafana (Self-hosted)
 │   ├── security-groups/        # 各コンポーネントのSG
 │   ├── iam/                    # Task Role、Execution Role
 │   ├── amp/                    # AMP Workspace
-│   ├── config-storage/         # 設定ファイル用S3バケット（※新規追加）
+│   ├── config-storage/         # 設定ファイル用S3バケット
 │   ├── efs/                    # Grafana用永続ストレージ（オプション）
 │   ├── ecs-cluster/            # Fargateクラスター
-│   ├── alb/                    # ALB×2（OTel、Grafana用）
+│   ├── alb/                    # ALB×2（OTel、Grafana用）、HTTPS対応
+│   ├── acm/                    # ACM証明書（HTTPS有効時）
+│   ├── dns/                    # Route53 Aliasレコード（HTTPS有効時）
 │   ├── otel-collector/         # OTel Collectorタスク定義
 │   └── grafana/                # Grafanaタスク定義
 │
@@ -204,7 +209,9 @@ ECS Fargate: Grafana (Self-hosted)
 - `modules/config-storage/` - 設定ファイル用S3バケット（OTel/Grafana設定の保存）
 - `modules/efs/` - Grafana用永続ストレージ（オプション）
 - `modules/ecs-cluster/` - Fargateクラスター
-- `modules/alb/` - ALB×2（OTel、Grafana用）
+- `modules/alb/` - ALB×2（OTel、Grafana用）、HTTPS対応
+- `modules/acm/` - ACMワイルドカード証明書（HTTPS有効時）
+- `modules/dns/` - Route53 Aliasレコード（カスタムドメイン用）
 - `modules/otel-collector/` - OTel Collectorタスク定義（S3から設定読み込み）
 - `modules/grafana/` - Grafanaタスク定義（initコンテナでS3からプロビジョニング取得）
 
@@ -430,6 +437,73 @@ AWS Managed Grafanaは高価（$250/月～）であり、開発環境では小�
 - **環境名**: dev
 - **コスト最適化**: Fargate Spot、Single-AZ NAT、短いログ保持期間
 - **データ永続化**: Dashboards as Code（EFS不使用）
+
+## HTTPS/カスタムドメイン設定
+
+### 概要
+
+カスタムドメインとHTTPSを有効化することで、以下のURLでアクセス可能になる：
+
+- OTel Collector: `https://{otel_subdomain}.{domain_name}` （例: `https://otel.example.com`）
+- Grafana: `https://{grafana_subdomain}.{domain_name}` （例: `https://dashboard.example.com`）
+
+### 前提条件
+
+- Route53にホストゾーンが作成済みであること（`domain_name`で指定するドメイン）
+- ホストゾーンのネームサーバーがドメインレジストラに設定済みであること
+
+### 有効化手順
+
+1. **terraform.tfvarsに以下を追加**
+
+   ```hcl
+   # HTTPS/カスタムドメイン設定
+   domain_name       = "example.com"      # ベースドメイン（Route53ホストゾーン名）
+   enable_https      = true               # HTTPS有効化フラグ
+   otel_subdomain    = "otel"             # OTel Collector用サブドメイン（デフォルト: otel）
+   grafana_subdomain = "dashboard"        # Grafana用サブドメイン（デフォルト: dashboard）
+   ```
+
+2. **terraform applyを実行**
+
+   ```bash
+   cd environments/dev
+   terraform plan -out=tfplan
+   terraform apply tfplan
+   ```
+
+3. **作成されるリソース**
+   - ACMワイルドカード証明書（`*.example.com`）
+   - DNS検証用Route53レコード
+   - OTel Collector用Aliasレコード（`otel.example.com` → ALB）
+   - Grafana用Aliasレコード（`dashboard.example.com` → ALB）
+   - ALB HTTPSリスナー（ポート443、TLS 1.3対応）
+   - HTTP→HTTPSリダイレクト（301）
+
+4. **出力値の確認**
+
+   ```bash
+   terraform output otel_custom_url
+   # => https://otel.example.com
+
+   terraform output grafana_custom_url
+   # => https://dashboard.example.com
+   ```
+
+### 変数一覧
+
+| 変数名              | 説明                         | デフォルト値  | 必須 |
+| ------------------- | ---------------------------- | ------------- | ---- |
+| `domain_name`       | ベースドメイン名             | `""`          | Yes  |
+| `enable_https`      | HTTPS有効化フラグ            | `false`       | No   |
+| `otel_subdomain`    | OTel Collector用サブドメイン | `"otel"`      | No   |
+| `grafana_subdomain` | Grafana用サブドメイン        | `"dashboard"` | No   |
+
+### 注意事項
+
+- `enable_https = false`（デフォルト）の場合、従来通りHTTP（ALB DNS名）でアクセス
+- ACM証明書のDNS検証完了まで数分かかる場合がある
+- Security Groupには既に443ポートのインバウンドルールが設定済み
 
 ## 関連ドキュメント
 

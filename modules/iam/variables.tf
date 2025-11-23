@@ -18,6 +18,12 @@ variable "aws_region" {
   type        = string
 }
 
+variable "config_bucket_arn" {
+  description = "設定ファイル保存用S3バケットのARN"
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)

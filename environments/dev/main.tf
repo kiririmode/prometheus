@@ -1,3 +1,7 @@
+# Dev環境 Terraform設定
+# 環境: dev
+# リージョン: ap-northeast-1
+
 terraform {
   required_version = ">= 1.13.0"
 
@@ -19,7 +23,7 @@ provider "aws" {
 
 # Phase 1: Network Infrastructure
 module "network" {
-  source = "./modules/network"
+  source = "../../modules/network"
 
   project_name         = var.project_name
   environment          = var.environment
@@ -34,7 +38,7 @@ module "network" {
 
 # Phase 1: Security Groups
 module "security_groups" {
-  source = "./modules/security-groups"
+  source = "../../modules/security-groups"
 
   project_name                = var.project_name
   environment                 = var.environment
@@ -48,7 +52,7 @@ module "security_groups" {
 
 # Phase 1: IAM Roles
 module "iam" {
-  source = "./modules/iam"
+  source = "../../modules/iam"
 
   project_name      = var.project_name
   environment       = var.environment
@@ -61,7 +65,7 @@ module "iam" {
 
 # Phase 2: AWS Managed Prometheus
 module "amp" {
-  source = "./modules/amp"
+  source = "../../modules/amp"
 
   project_name       = var.project_name
   environment        = var.environment
@@ -72,28 +76,28 @@ module "amp" {
 
 # Phase 2: 設定ファイルストレージ（S3）
 module "config_storage" {
-  source = "./modules/config-storage"
+  source = "../../modules/config-storage"
 
   project_name = var.project_name
   environment  = var.environment
 
   # OTel Collector設定（環境変数を展開）
-  otel_collector_config = templatefile("${path.module}/configs/otel-collector-config.yaml", {
+  otel_collector_config = templatefile("${path.module}/../../configs/otel-collector-config.yaml", {
     AMP_REMOTE_WRITE_ENDPOINT = module.amp.remote_write_endpoint
     AWS_REGION                = var.aws_region
   })
 
   # Grafana データソース設定（環境変数を展開）
-  grafana_datasources_config = templatefile("${path.module}/configs/grafana/provisioning/datasources/amp-datasource.yaml", {
+  grafana_datasources_config = templatefile("${path.module}/../../configs/grafana/provisioning/datasources/amp-datasource.yaml", {
     AMP_QUERY_ENDPOINT = module.amp.query_endpoint
     AWS_REGION         = var.aws_region
   })
 
   # Grafana ダッシュボードプロバイダー設定
-  grafana_dashboards_config = file("${path.module}/configs/grafana/provisioning/dashboards/dashboards.yaml")
+  grafana_dashboards_config = file("${path.module}/../../configs/grafana/provisioning/dashboards/dashboards.yaml")
 
   # サンプルダッシュボード
-  grafana_sample_dashboard = file("${path.module}/configs/grafana/provisioning/dashboards/default/sample-dashboard.json")
+  grafana_sample_dashboard = file("${path.module}/../../configs/grafana/provisioning/dashboards/default/sample-dashboard.json")
 
   tags = local.common_tags
 }
@@ -101,7 +105,7 @@ module "config_storage" {
 # Phase 2: EFS (Optional - for Grafana data persistence)
 module "efs" {
   count  = var.enable_grafana_efs ? 1 : 0
-  source = "./modules/efs"
+  source = "../../modules/efs"
 
   project_name           = var.project_name
   environment            = var.environment
@@ -114,7 +118,7 @@ module "efs" {
 
 # Phase 3: ECS Cluster
 module "ecs_cluster" {
-  source = "./modules/ecs-cluster"
+  source = "../../modules/ecs-cluster"
 
   project_name = var.project_name
   environment  = var.environment
@@ -124,7 +128,7 @@ module "ecs_cluster" {
 
 # Phase 3: Application Load Balancers
 module "alb" {
-  source = "./modules/alb"
+  source = "../../modules/alb"
 
   project_name                  = var.project_name
   environment                   = var.environment
@@ -138,7 +142,7 @@ module "alb" {
 
 # Phase 4: OpenTelemetry Collector
 module "otel_collector" {
-  source = "./modules/otel-collector"
+  source = "../../modules/otel-collector"
 
   project_name              = var.project_name
   environment               = var.environment
@@ -162,7 +166,7 @@ module "otel_collector" {
 
 # Phase 4: Grafana
 module "grafana" {
-  source = "./modules/grafana"
+  source = "../../modules/grafana"
 
   project_name                   = var.project_name
   environment                    = var.environment

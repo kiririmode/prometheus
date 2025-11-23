@@ -91,6 +91,12 @@ variable "efs_file_system_id" {
   default     = null
 }
 
+variable "grafana_provisioning_s3_prefix" {
+  description = "Grafanaプロビジョニングファイルが保存されているS3プレフィックス（例: s3://bucket/grafana/provisioning/）"
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)

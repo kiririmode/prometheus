@@ -44,15 +44,13 @@ receivers:
 # 複数のプロセッサーを順番に適用できます（パイプライン処理）。
 #
 processors:
-  # リソース検出プロセッサー: ECS タスクとシステム情報を自動検出してラベルに追加
+  # リソース検出プロセッサー: ECS タスクの情報を自動検出してラベルに追加
   # 必要な属性のみを有効化し、不要なラベルの増加を防止
   # 有効化する属性:
   #   - aws.ecs.task.id: タスクの一意識別子（冗長構成時の Collector 識別に使用）
   #   - aws.ecs.task.revision: タスク定義のリビジョン番号
-  #   - host.arch: ホストの CPU アーキテクチャ（x86_64, arm64 等）
-  #   - os.type: OS 種別（linux 等）
   resourcedetection:
-    detectors: [ecs, system, env] # ECS メタデータ + システム情報 + 環境変数から検出
+    detectors: [ecs, env] # ECS メタデータ + 環境変数から検出
     timeout: 2s # メタデータ取得のタイムアウト
     override: false # 送信元が設定した値を尊重（上書きしない）
     # ECS detector: タスク識別に必要な属性のみ有効化
@@ -88,36 +86,6 @@ processors:
         cloud.provider:
           enabled: false
         cloud.region:
-          enabled: false
-    # System detector: ホスト/OS 情報の必要な属性のみ有効化
-    system:
-      resource_attributes:
-        host.arch:
-          enabled: true
-        os.type:
-          enabled: true
-        # 以下は不要なため無効化
-        os.description:
-          enabled: false
-        host.name:
-          enabled: false
-        host.id:
-          enabled: false
-        host.ip:
-          enabled: false
-        host.mac:
-          enabled: false
-        host.cpu.vendor.id:
-          enabled: false
-        host.cpu.family:
-          enabled: false
-        host.cpu.model.id:
-          enabled: false
-        host.cpu.model.name:
-          enabled: false
-        host.cpu.stepping:
-          enabled: false
-        host.cpu.cache.l2.size:
           enabled: false
 
   # バッチプロセッサー: データをまとめて送信することで効率化

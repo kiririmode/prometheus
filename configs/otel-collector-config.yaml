@@ -44,18 +44,81 @@ receivers:
 # 複数のプロセッサーを順番に適用できます（パイプライン処理）。
 #
 processors:
-  # リソース検出プロセッサー: ECS タスクの情報を自動検出してラベルに追加
-  # ECS Task Metadata Endpoint (V3/V4) から以下の属性を自動取得します:
+  # リソース検出プロセッサー: ECS タスクとシステム情報を自動検出してラベルに追加
+  # 必要な属性のみを有効化し、不要なラベルの増加を防止
+  # 有効化する属性:
   #   - aws.ecs.task.id: タスクの一意識別子（冗長構成時の Collector 識別に使用）
-  #   - aws.ecs.cluster.name: ECS クラスター名
-  #   - aws.ecs.task.family: タスク定義ファミリー名
-  #   - host.name: コンテナのホスト名
-  #   - cloud.provider: aws
-  #   - cloud.platform: aws_ecs
+  #   - aws.ecs.task.revision: タスク定義のリビジョン番号
+  #   - host.arch: ホストの CPU アーキテクチャ（x86_64, arm64 等）
+  #   - os.type: OS 種別（linux 等）
   resourcedetection:
-    detectors: [ecs, env] # ECS メタデータ + 環境変数から検出
+    detectors: [ecs, system, env] # ECS メタデータ + システム情報 + 環境変数から検出
     timeout: 2s # メタデータ取得のタイムアウト
     override: false # 送信元が設定した値を尊重（上書きしない）
+    # ECS detector: タスク識別に必要な属性のみ有効化
+    ecs:
+      resource_attributes:
+        aws.ecs.task.id:
+          enabled: true
+        aws.ecs.task.revision:
+          enabled: true
+        # 以下は不要なため無効化
+        aws.ecs.cluster.arn:
+          enabled: false
+        aws.ecs.launchtype:
+          enabled: false
+        aws.ecs.task.arn:
+          enabled: false
+        aws.ecs.task.family:
+          enabled: false
+        aws.log.group.arns:
+          enabled: false
+        aws.log.group.names:
+          enabled: false
+        aws.log.stream.arns:
+          enabled: false
+        aws.log.stream.names:
+          enabled: false
+        cloud.account.id:
+          enabled: false
+        cloud.availability_zone:
+          enabled: false
+        cloud.platform:
+          enabled: false
+        cloud.provider:
+          enabled: false
+        cloud.region:
+          enabled: false
+    # System detector: ホスト/OS 情報の必要な属性のみ有効化
+    system:
+      resource_attributes:
+        host.arch:
+          enabled: true
+        os.type:
+          enabled: true
+        # 以下は不要なため無効化
+        os.description:
+          enabled: false
+        host.name:
+          enabled: false
+        host.id:
+          enabled: false
+        host.ip:
+          enabled: false
+        host.mac:
+          enabled: false
+        host.cpu.vendor.id:
+          enabled: false
+        host.cpu.family:
+          enabled: false
+        host.cpu.model.id:
+          enabled: false
+        host.cpu.model.name:
+          enabled: false
+        host.cpu.stepping:
+          enabled: false
+        host.cpu.cache.l2.size:
+          enabled: false
 
   # バッチプロセッサー: データをまとめて送信することで効率化
   # 個別に送信すると通信オーバーヘッドが大きいため、一定量をまとめて送ります

@@ -349,6 +349,49 @@ deep_research(query="OpenTelemetry Collector performance optimization on AWS")
 
 ## トラブルシューティング
 
+### ログの確認方法
+
+#### OTel Collector のログ確認
+
+```bash
+# 直近30分のログを確認
+aws logs tail /ecs/prometheus-dev-otel-collector --region ap-northeast-1 --since 30m
+
+# リアルタイムでログを監視
+aws logs tail /ecs/prometheus-dev-otel-collector --region ap-northeast-1 --follow
+
+# エラーのみフィルタ
+aws logs filter-log-events \
+  --log-group-name /ecs/prometheus-dev-otel-collector \
+  --region ap-northeast-1 \
+  --filter-pattern "ERROR"
+```
+
+#### Grafana のログ確認
+
+```bash
+# 直近30分のログを確認
+aws logs tail /ecs/prometheus-dev-grafana --region ap-northeast-1 --since 30m
+
+# リアルタイムでログを監視
+aws logs tail /ecs/prometheus-dev-grafana --region ap-northeast-1 --follow
+```
+
+#### AMP メトリクス確認
+
+```bash
+# Workspace IDを取得
+WORKSPACE_ID=$(cd environments/dev && terraform output -raw amp_workspace_id)
+
+# 利用可能なメトリクス一覧
+uvx awscurl --service aps --region ap-northeast-1 \
+  "https://aps-workspaces.ap-northeast-1.amazonaws.com/workspaces/${WORKSPACE_ID}/api/v1/label/__name__/values"
+
+# 特定メトリクスのクエリ（例: claude_code_lines_of_code_count）
+uvx awscurl --service aps --region ap-northeast-1 \
+  "https://aps-workspaces.ap-northeast-1.amazonaws.com/workspaces/${WORKSPACE_ID}/api/v1/query?query=claude_code_lines_of_code_count"
+```
+
 ### OTel Collectorにメトリクスが届かない
 
 1. Security GroupでPort 4318開放確認

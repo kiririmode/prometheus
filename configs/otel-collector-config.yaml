@@ -71,6 +71,14 @@ processors:
     limit_mib: 512 # メモリ上限（512MB）- これを超えるとデータを破棄
     spike_limit_mib: 128 # スパイク許容量 - 急激な増加に対するバッファ
 
+  # Delta to Cumulative 変換プロセッサー
+  # Claude Code は Delta temporality でメトリクスを送信しますが、
+  # Prometheus Remote Write は Cumulative temporality を期待します。
+  # このプロセッサーで Delta → Cumulative に変換します。
+  deltatocumulative:
+    max_stale: 5m # 5分間更新がないメトリクスは stale とみなす
+    max_streams: 10000 # 同時に追跡するストリーム数の上限
+
   # リソースプロセッサー: メトリクスにリソース属性（ラベル）を追加
   # Prometheus/Grafana でフィルタリングする際に便利な属性を付与します
   #
@@ -82,7 +90,7 @@ processors:
       # service.name: このメトリクスを生成したサービス名
       - key: service.name
         value: otel-collector
-        action: upsert # 常に otel-collector で上書き（送信元の値は無視される）
+        action: insert # 値がない場合のみ追加（送信元の値を尊重）
       # deployment.environment: デプロイ環境（dev/stg/prod など）
       - key: deployment.environment
         from_attribute: ENVIRONMENT # 環境変数 ENVIRONMENT の値を使用
@@ -112,9 +120,9 @@ exporters:
   # デバッグエクスポーター: トラブルシューティング用にログ出力
   # 本番環境では verbosity を下げるか、削除することを推奨
   debug:
-    verbosity: basic # 出力レベル: basic（基本情報のみ）/ normal / detailed
-    sampling_initial: 5 # 最初の5件は必ず出力
-    sampling_thereafter: 200 # 以降は200件ごとに1件出力（ログ量削減）
+    verbosity: detailed # 出力レベル: basic（基本情報のみ）/ normal / detailed
+    sampling_initial: 10 # 最初の10件は必ず出力
+    sampling_thereafter: 50 # 以降は50件ごとに1件出力
 
 # ------------------------------------------------------------------------------
 # extensions（エクステンション）: 補助機能の設定
@@ -162,7 +170,7 @@ service:
     metrics:
       receivers: [otlp] # OTLP でデータを受信
       # 処理順序: メモリ制限 → ECS情報検出 → バッチ化 → 属性追加
-      processors: [memory_limiter, resourcedetection, batch, resource]
+      processors: [memory_limiter, resourcedetection, deltatocumulative, batch, resource]
       exporters: [prometheusremotewrite, debug] # AMP に送信 + デバッグ出力
 
   # OTel Collector 自体のテレメトリ設定
